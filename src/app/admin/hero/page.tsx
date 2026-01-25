@@ -1,0 +1,267 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { toast } from "sonner";
+import { Loader2, Plus, Trash2, Upload } from "lucide-react";
+import Image from "next/image";
+
+interface HeroSlide {
+    _id: string;
+    title: string;
+    subtitle: string;
+    image: string;
+}
+
+import { useLanguage } from "@/contexts/LanguageContext";
+
+export default function AdminHeroPage() {
+    const { t } = useLanguage();
+    const [slides, setSlides] = useState<HeroSlide[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+    const [uploading, setUploading] = useState(false);
+
+    // Form State
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [title, setTitle] = useState("");
+    const [subtitle, setSubtitle] = useState("");
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string>("");
+
+    // Delete State
+    const [deleteId, setDeleteId] = useState<string | null>(null);
+
+    async function fetchSlides() {
+        try {
+            const res = await fetch("/api/hero");
+            if (res.ok) setSlides(await res.json());
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    useEffect(() => {
+        fetchSlides();
+    }, []);
+
+    function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = e.target.files?.[0];
+        if (file) {
+            setImageFile(file);
+            // Create preview
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setImagePreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    function cancelEdit() {
+        setEditingId(null);
+        setTitle("");
+        setSubtitle("");
+        setImagePreview("");
+        setImageFile(null);
+    }
+
+    async function handleSubmit(e: React.FormEvent) {
+        e.preventDefault();
+
+        if (!imageFile) {
+            toast.error("Please select an image");
+            return;
+        }
+
+        setSubmitting(true);
+        setUploading(true);
+
+        try {
+            // Upload image first - reusing the general upload API
+            const formData = new FormData();
+            formData.append('file', imageFile);
+
+            const uploadRes = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!uploadRes.ok) {
+                const error = await uploadRes.json();
+                toast.error(error.message || "Failed to upload image");
+                setSubmitting(false);
+                setUploading(false);
+                return;
+            }
+
+            const { url } = await uploadRes.json();
+            setUploading(false);
+
+            // Create hero slide
+            const res = await fetch("/api/hero", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title, subtitle, image: url }),
+            });
+
+            if (res.ok) {
+                toast.success("Slide added successfully");
+                setTitle("");
+                setSubtitle("");
+                setImageFile(null);
+                setImagePreview("");
+                fetchSlides();
+            } else {
+                toast.error("Failed to add slide");
+            }
+        } catch (error) {
+            toast.error("Error adding slide");
+        } finally {
+            setSubmitting(false);
+            setUploading(false);
+        }
+    }
+
+    async function deleteSlide(id: string) {
+        if (!confirm("Delete this slide?")) return;
+
+        try {
+            const res = await fetch(`/api/hero?id=${id}`, { method: "DELETE" });
+            if (res.ok) {
+                toast.success("Slide deleted");
+                fetchSlides();
+            }
+        } catch (error) {
+            toast.error("Error deleting slide");
+        }
+    }
+
+    return (
+        <div className="space-y-6">
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-3xl font-bold tracking-tight">{t('admin.heroManagement')}</h1>
+                    <p className="text-muted-foreground">{t('admin.heroDesc')}</p>
+                </div>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-2">
+                {/* Add/Edit Form */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle>{editingId ? t('admin.editSlide') : t('admin.addSlide')}</CardTitle>
+                        <CardDescription>
+                            {editingId ? "Update the details below." : "Upload a high-quality banner image (1920x1080 recommended)."}
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="title">{t('admin.slideTitle')}</Label>
+                                <Input
+                                    id="title"
+                                    placeholder="e.g. Premium Printing Solutions"
+                                    value={title}
+                                    onChange={(e) => setTitle(e.target.value)}
+                                    required
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="subtitle">{t('admin.slideSubtitle')}</Label>
+                                <Input
+                                    id="subtitle"
+                                    placeholder="e.g. We bring your ideas to life..."
+                                    value={subtitle}
+                                    onChange={(e) => setSubtitle(e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="image">{t('admin.slideImage')} {editingId && "(Optional to replace)"}</Label>
+                                <Input
+                                    id="image"
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleFileChange}
+                                    required={!editingId}
+                                />
+                                {imagePreview && (
+                                    <div className="mt-2 relative w-full h-40 border rounded overflow-hidden">
+                                        <Image src={imagePreview} alt="Preview" fill className="object-cover" />
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex gap-2">
+                                <Button type="submit" className="flex-1" disabled={submitting}>
+                                    {uploading ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            {t('admin.uploading')}
+                                        </>
+                                    ) : submitting ? (
+                                        <>
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            {t('admin.saving')}
+                                        </>
+                                    ) : (
+                                        <>
+                                            {editingId ? <Upload className="mr-2 h-4 w-4" /> : <Plus className="mr-2 h-4 w-4" />}
+                                            {editingId ? t('admin.update') : t('admin.add')}
+                                        </>
+                                    )}
+                                </Button>
+                                {editingId && (
+                                    <Button type="button" variant="outline" onClick={cancelEdit}>
+                                        {t('admin.cancel')}
+                                    </Button>
+                                )}
+                            </div>
+                        </form>
+                    </CardContent>
+                </Card>
+
+                {/* Preview / List */}
+                <Card className="md:col-span-1 border-none shadow-none bg-transparent">
+                    <div className="space-y-4">
+                        <h3 className="text-lg font-semibold">Active Slides ({slides.length})</h3>
+                        {loading ? (
+                            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+                        ) : slides.length === 0 ? (
+                            <div className="text-center text-muted-foreground py-10 border rounded-lg bg-card">
+                                No slides found. Homepage will use default hero.
+                            </div>
+                        ) : (
+                            <div className="grid gap-4 max-h-[600px] overflow-y-auto pr-2">
+                                {slides.map((slide, index) => (
+                                    <div key={slide._id} className="flex flex-col gap-3 p-4 border rounded-lg bg-card shadow-sm">
+                                        <div className="flex justify-between items-start gap-4">
+                                            <div className="relative w-24 h-16 bg-muted rounded overflow-hidden flex-shrink-0">
+                                                <Image src={slide.image} alt={slide.title} fill className="object-cover" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="bg-muted text-xs px-2 py-0.5 rounded text-muted-foreground font-mono">#{index + 1}</span>
+                                                    <h4 className="font-semibold truncate text-sm">{slide.title}</h4>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground line-clamp-2">{slide.subtitle || "No subtitle"}</p>
+                                            </div>
+                                            <Button variant="ghost" size="icon" className="text-destructive h-8 w-8 flex-shrink-0" onClick={() => deleteSlide(slide._id)}>
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </Card>
+            </div>
+        </div>
+    );
+}
