@@ -50,15 +50,39 @@ export default function ProfilePage() {
         }
     };
 
+    const [imageFile, setImageFile] = useState<File | null>(null);
+
     const handleSave = async () => {
         setSaving(true);
         try {
-            console.log('Saving profile with:', { name, imageLength: imageUrl?.length });
+            let finalImageUrl = imageUrl;
+
+            // 1. Upload new image if selected
+            if (imageFile) {
+                const formData = new FormData();
+                formData.append('file', imageFile);
+
+                const uploadRes = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!uploadRes.ok) {
+                    const error = await uploadRes.json();
+                    throw new Error(error.message || 'Failed to upload image');
+                }
+
+                const { url } = await uploadRes.json();
+                finalImageUrl = url;
+            }
+
+            // 2. Update profile with URL
+            console.log('Saving profile with:', { name, image: finalImageUrl });
 
             const res = await fetch('/api/profile', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, image: imageUrl }),
+                body: JSON.stringify({ name, image: finalImageUrl }),
             });
 
             if (res.ok) {
@@ -67,18 +91,21 @@ export default function ProfilePage() {
 
                 toast.success('Profile updated successfully! Refreshing...');
 
+                // Clear file state
+                setImageFile(null);
+
                 // Reload page to update session
                 setTimeout(() => {
-                    window.location.href = '/profile';
+                    window.location.reload();
                 }, 500);
             } else {
                 const error = await res.json();
                 console.error('Failed to update:', error);
                 toast.error('Failed to update profile: ' + (error.error || 'Unknown error'));
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error saving profile:', error);
-            toast.error('An error occurred');
+            toast.error(error.message || 'An error occurred');
         } finally {
             setSaving(false);
         }
@@ -136,12 +163,15 @@ export default function ProfilePage() {
                                     onChange={(e) => {
                                         const file = e.target.files?.[0];
                                         if (file) {
-                                            // Check file size (max 2MB)
-                                            if (file.size > 2 * 1024 * 1024) {
-                                                toast.error('Image size must be less than 2MB');
+                                            // Check file size (max 5MB match API)
+                                            if (file.size > 5 * 1024 * 1024) {
+                                                toast.error('Image size must be less than 5MB');
                                                 return;
                                             }
 
+                                            setImageFile(file); // Store file for upload
+
+                                            // Preview
                                             const reader = new FileReader();
                                             reader.onloadend = () => {
                                                 setImageUrl(reader.result as string);

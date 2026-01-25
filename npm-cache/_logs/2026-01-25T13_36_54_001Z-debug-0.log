@@ -1,0 +1,20 @@
+0 verbose cli /usr/local/bin/node /usr/local/bin/npm
+1 info using npm@10.9.2
+2 info using node@v22.16.0
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/Volumes/WEB COURSE/Projects/printing-house/printing-house/.npmrc
+5 silly config load:file:/Users/mogy/.npmrc
+6 silly config load:file:/usr/local/etc/npmrc
+7 verbose title npm list cloudinary
+8 verbose argv "list" "cloudinary"
+9 verbose logfile logs-max:10 dir:/Volumes/WEB COURSE/Projects/printing-house/printing-house/npm-cache/_logs/2026-01-25T13_36_54_001Z-
+10 verbose logfile /Volumes/WEB COURSE/Projects/printing-house/printing-house/npm-cache/_logs/2026-01-25T13_36_54_001Z-debug-0.log
+11 silly logfile start cleaning logs, removing 1 files
+12 silly packumentCache heap:4345298944 maxSize:1086324736 maxEntrySize:543162368
+13 silly logfile done cleaning log files
+14 verbose cwd /Volumes/WEB COURSE/Projects/printing-house/printing-house
+15 verbose os Darwin 23.6.0
+16 verbose node v22.16.0
+17 verbose npm  v10.9.2
+18 verbose exit 0
+19 info ok

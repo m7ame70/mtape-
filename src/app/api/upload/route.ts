@@ -3,12 +3,29 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { v2 as cloudinary } from 'cloudinary';
+
+// Check if Cloudinary is configured
+const isCloudinaryConfigured = !!(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET
+);
+
+// Configure Cloudinary if environment variables are present
+if (isCloudinaryConfigured) {
+    cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET,
+    });
+}
 
 export async function POST(req: Request) {
     try {
         const session = await getServerSession(authOptions);
 
-        if (!session || session.user.role !== 'admin') {
+        if (!session) {
             return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
         }
 
@@ -31,7 +48,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ message: 'File too large. Max 5MB.' }, { status: 400 });
         }
 
-        // Create unique filename
+        // Create unique filename and buffer
         const bytes = await file.arrayBuffer();
         const buffer = Buffer.from(bytes);
 
@@ -39,24 +56,69 @@ export async function POST(req: Request) {
         const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
         const filename = `${timestamp}-${originalName}`;
 
-        // Ensure uploads directory exists
+        // If Cloudinary is configured, upload to Cloudinary
+        if (isCloudinaryConfigured) {
+            try {
+                // Convert to data URI for upload
+                const base64 = buffer.toString('base64');
+                const dataUri = `data:${file.type};base64,${base64}`;
+
+                const result = await cloudinary.uploader.upload(dataUri, {
+                    folder: 'printing-house',
+                    public_id: filename.replace(/\.[^.]+$/, ''),
+                    resource_type: 'image',
+                    use_filename: false,
+                    unique_filename: false,
+                });
+
+                // Return Cloudinary secure URL and public id
+                return NextResponse.json(
+                    { url: result.secure_url, public_id: result.public_id },
+                    { status: 200 }
+                );
+            } catch (err: unknown) {
+                const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+                console.error('Cloudinary upload error:', errorMessage);
+
+                // On production (Vercel), return error - no local fallback
+                if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+                    return NextResponse.json(
+                        { message: `Cloudinary upload failed: ${errorMessage}` },
+                        { status: 500 }
+                    );
+                }
+                // In development, fall through to local save
+            }
+        } else {
+            // Cloudinary not configured
+            if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+                return NextResponse.json(
+                    { message: 'Cloudinary is not configured. Please add CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET environment variables.' },
+                    { status: 500 }
+                );
+            }
+        }
+
+        // Fallback for development: Ensure uploads directory exists and save file locally
         const uploadsDir = join(process.cwd(), 'public', 'uploads');
         try {
             await mkdir(uploadsDir, { recursive: true });
-        } catch (error) {
+        } catch {
             // Directory might already exist
         }
 
-        // Save file
+        // Save file locally
         const filepath = join(uploadsDir, filename);
         await writeFile(filepath, buffer);
 
-        // Return public URL
+        // Return public URL for local file
         const publicUrl = `/uploads/${filename}`;
 
         return NextResponse.json({ url: publicUrl }, { status: 200 });
-    } catch (error) {
-        console.error('Upload error:', error);
-        return NextResponse.json({ message: 'Error uploading file', error }, { status: 500 });
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Upload error:', errorMessage);
+        return NextResponse.json({ message: `Error uploading file: ${errorMessage}` }, { status: 500 });
     }
 }
+
